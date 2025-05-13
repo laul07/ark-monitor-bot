@@ -33,7 +33,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
 
             token = config.get("nitrado_token")
             embed = discord.Embed(
-                title="📱 Ark Server Status",
+                title="📡 Ark Server Status",
                 color=discord.Color.green()
             )
 
@@ -48,8 +48,8 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         display_name = custom_name or f"Server {sid}"
 
                         map_name    = "Unknown"
-                        players     = 0
-                        max_players = "?"
+                        players     = None
+                        max_players = None
                         status      = "unknown"
 
                         try:
@@ -65,22 +65,31 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             config_name = cfg.get("server-name")
                             slots       = gs.get("slots", "?")
 
+                            # Primary player data
                             player_data = gs.get("player", {}) or {}
                             players     = player_data.get("count")
                             max_players = player_data.get("max")
 
-                            # Fallback to query if player data is missing
+                            # Fallback to query endpoint if missing
                             if players is None or max_players is None:
                                 query_url = f"https://api.nitrado.net/services/{sid}/gameservers/query"
                                 async with session.get(query_url) as qresp:
+                                    resp_text = await qresp.text()
+                                    print(f"[DEBUG] Query response for {sid}: status={qresp.status}, text={resp_text}")
                                     if qresp.status == 200:
                                         qdata = await qresp.json()
-                                        print(f"[DEBUG] full query response for {sid}:\n{qdata}")
+                                        print(f"[DEBUG] Full query JSON for {sid}: {qdata}")
                                         query = qdata.get("data", {}).get("query", {}) or qdata.get("data", {})
                                         players     = query.get("player_current")
                                         max_players = query.get("player_max")
 
-                            print(f"[DEBUG] players={players}, max_players={max_players}")
+                            # Final defaults if still missing
+                            if players is None:
+                                players = 0
+                            if max_players is None:
+                                max_players = slots
+
+                            print(f"[DEBUG] Final players={players}, max_players={max_players}")
 
                             display_name = (
                                 custom_name or
@@ -107,8 +116,8 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             name=display_name,
                             value=(
                                 f"🆔 ID: `{sid}`\n"
-                                f"🗼 Map: `{map_name}`\n"
-                                f"🧝 Players: `{players}/{max_players}`\n"
+                                f"🗺️ Map: `{map_name}`\n"
+                                f"🧍 Players: `{players}/{max_players}`\n"
                                 f"{status_emoji} Status: `{status}`"
                             ),
                             inline=False
@@ -154,11 +163,11 @@ class SetStatusUpdateCog(GroupCog, name="status"):
         existing = discord.utils.get(guild.channels, name=channel_name)
         if existing:
             config["status_channel_id"] = existing.id
-            msg = f"✅ Using existing channel `{channel_name}`."
+            msg = f"✅ Using existing channel `{channel_name}`." 
         else:
             new_ch = await guild.create_text_channel(channel_name)
             config["status_channel_id"] = new_ch.id
-            msg = f"✅ Created channel `{channel_name}`."
+            msg = f"✅ Created channel `{channel_name}`." 
         save_config(guild.id, config)
         await interaction.response.send_message(msg, ephemeral=True)
         await self.manual_status_update(guild)
