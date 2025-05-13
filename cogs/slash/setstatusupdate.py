@@ -69,15 +69,16 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             players     = player_data.get("count")
                             max_players = player_data.get("max")
 
-                            # Fallback to query if empty
+                            # Fallback to query if player data is missing
                             if players is None or max_players is None:
                                 query_url = f"https://api.nitrado.net/services/{sid}/gameservers/query"
                                 async with session.get(query_url) as qresp:
                                     if qresp.status == 200:
                                         qdata = await qresp.json()
+                                        print(f"[DEBUG] full query response for {sid}:\n{qdata}")
                                         query = qdata.get("data", {}).get("query", {}) or qdata.get("data", {})
-                                        players     = query.get("player_current", 0)
-                                        max_players = query.get("player_max", "?")
+                                        players     = query.get("player_current")
+                                        max_players = query.get("player_max")
 
                             print(f"[DEBUG] players={players}, max_players={max_players}")
 
