@@ -75,26 +75,34 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             if players is None or max_players is None:
                                 query_url = f"https://api.nitrado.net/services/{sid}/gameservers/query"
                                 async with session.get(query_url) as qresp:
+                                    resp_text = await qresp.text()
+                                    print(f"[DEBUG] Query response for {sid}: status={qresp.status}, text={resp_text}")
                                     if qresp.status == 200:
                                         qdata = await qresp.json()
                                         query = qdata.get("data", {}).get("query", {}) or qdata.get("data", {})
                                         players     = query.get("player_current")
                                         max_players = query.get("player_max")
 
-                            # Final fallback: players list endpoint
+                            # Final fallback: slots default
                             if players is None:
                                 players = 0
                             if max_players is None:
                                 max_players = slots
 
+                            # Debug players and max_players
+                            print(f"[DEBUG] Final players for {sid} after query fallback: {players}/{max_players}")
+
+                            # Attempt /players endpoint if still zero
                             if players == 0:
-                                # Attempt /players endpoint
                                 players_url = f"https://api.nitrado.net/services/{sid}/players"
                                 async with session.get(players_url) as presp:
+                                    presp_text = await presp.text()
+                                    print(f"[DEBUG] Players endpoint for {sid}: status={presp.status}, text={presp_text}")
                                     if presp.status == 200:
                                         pdata = await presp.json()
                                         plist = pdata.get("data", {}).get("data", []) or pdata.get("data", [])
                                         players = len(plist)
+                                        print(f"[DEBUG] Player list length for {sid}: {players}")
 
                             # Determine final display values
                             display_name = (
