@@ -44,28 +44,26 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                     headers={"Authorization": f"Bearer {token}"}
                 ) as session:
                     for sid in server_ids:
-                        # load guild-specific custom name or default
+                        # Custom or default display name
                         custom_name  = name_map.get(str(sid))
                         display_name = custom_name or f"Server {sid}"
 
                         try:
-                            # fetch server metadata
+                            # Fetch server metadata
                             main_url = f"https://api.nitrado.net/services/{sid}/gameservers"
                             async with session.get(main_url) as resp:
                                 if resp.status != 200:
                                     raise ValueError(f"Metadata fetch failed: {resp.status}")
                                 mdata = await resp.json()
 
-                            gs = mdata.get("data", {}).get("gameserver", {})
-                            # slots and basic info
-                            slots       = gs.get("slots", "?")
-                            status      = gs.get("status", "unknown")
-                            cfg         = gs.get("settings", {}).get("config", {})
-
-                            # determine map name
-                            map_name    = cfg.get("map") or gs.get("label") or "Unknown"
-
-                            # determine display name
+                            gs = mdata.get("data", {}).get("gameserver", {}) or {}
+                            # Basic fields
+                            slots      = gs.get("slots", "?")
+                            status     = gs.get("status", "unknown")
+                            cfg        = gs.get("settings", {}).get("config", {})
+                            # Map name from config or label
+                            map_name   = cfg.get("map") or gs.get("label") or "Unknown"
+                            # Determine display name
                             display_name = (
                                 custom_name or
                                 cfg.get("server-name") or
@@ -73,28 +71,49 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                 display_name
                             )
 
-                            # fetch connected players list
+                            # First attempt: /players endpoint
                             players_url = f"https://api.nitrado.net/services/{sid}/players"
                             async with session.get(players_url) as presp:
+                                presp_text = await presp.text()
+                                print(f"[DEBUG] Players endpoint for {sid}: status={presp.status}, text={presp_text}")
                                 if presp.status == 200:
                                     pdata = await presp.json()
                                     plist = pdata.get("data", {}).get("data", []) or pdata.get("data", [])
                                     players = len(plist)
                                 else:
-                                    players = 0
+                                    players = None
 
-                            max_players = slots
+                            # Fallback: /gameservers/query endpoint
+                            if players is None:
+                                query_url = f"https://api.nitrado.net/services/{sid}/gameservers/query"
+                                async with session.get(query_url) as qresp:
+                                    qtext = await qresp.text()
+                                    print(f"[DEBUG] Query fallback for {sid}: status={qresp.status}, text={qtext}")
+                                    if qresp.status == 200:
+                                        qdata = await qresp.json()
+                                        query = qdata.get("data", {}).get("query", {}) or qdata.get("data", {})
+                                        players     = query.get("player_current")
+                                        max_players = query.get("player_max")
+                                    else:
+                                        max_players = slots
+                            else:
+                                max_players = slots
+
+                            # Final defaults
+                            if players is None:
+                                players = 0
+                            if max_players is None:
+                                max_players = slots
 
                         except Exception as e:
                             print(f"[ERROR] fetching data for {sid}: {e}")
-                            # defaults on error
-                            display_name = custom_name or f"Server {sid}"
                             map_name     = "Unknown"
+                            display_name = custom_name or f"Server {sid}"
                             players      = 0
                             max_players  = "?"
                             status       = "unknown"
 
-                        # choose emoji by status
+                        # Choose emoji by status
                         s = status.lower()
                         if s in ("started", "online"):
                             status_emoji = "🟢"
@@ -103,7 +122,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         else:
                             status_emoji = "🔴"
 
-                        # add embed fields
+                        # Add embed fields
                         embed.add_field(
                             name=display_name,
                             value=(
@@ -116,11 +135,11 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         )
                         embed.add_field(name="\u200b", value="\u200b", inline=False)
 
-            # footer and timestamp
+            # Footer and timestamp
             embed.description = f"Last updated: <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
             embed.set_footer(text="Auto-updated every 10 minutes")
 
-            # prune old messages
+            # Clean up old messages
             try:
                 async for msg in channel.history(limit=50):
                     if self.status_message is None or msg.id != self.status_message.id:
@@ -128,7 +147,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
             except Exception as prune_err:
                 print(f"[WARN] prune failed: {prune_err}")
 
-            # send or edit existing status message
+            # Send or edit status message
             try:
                 if self.status_message:
                     await self.status_message.edit(embed=embed)
