@@ -70,19 +70,27 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                 display_name
                             )
 
-                            # Attempt A2S server query by parsing 'address'
+                            # Debug connect info
+                            connect_info = gs.get("connect")
+                            print(f"[DEBUG] connect info for {sid}: {connect_info}")
+
+                            # Attempt A2S server query
                             players = None
                             max_players = None
-                            address = gs.get("connect", {}).get("address")
-                            if address:
-                                try:
-                                    host, port_str = address.split(":")
-                                    port = int(port_str)
-                                    info = a2s.info((host, port))
-                                    players = info.player_count
-                                    max_players = info.max_players
-                                except Exception as a2s_err:
-                                    print(f"[WARN] A2S query failed for {sid}: {a2s_err}")
+                            if isinstance(connect_info, dict):
+                                address = connect_info.get("address") or connect_info.get("ip")
+                                port = connect_info.get("port") or connect_info.get("query_port")
+                                if address and port:
+                                    try:
+                                        # If address includes port
+                                        if ":" in address and not isinstance(port, int):
+                                            host, port_str = address.split(":")
+                                            port = int(port_str)
+                                        info = a2s.info((address, port))
+                                        players = info.player_count
+                                        max_players = info.max_players
+                                    except Exception as a2s_err:
+                                        print(f"[WARN] A2S query failed for {sid}: {a2s_err}")
 
                             # Fallback: players endpoint if A2S failed
                             if players is None:
