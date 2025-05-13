@@ -45,7 +45,6 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                     headers={"Authorization": f"Bearer {token}"}
                 ) as session:
                     for sid in server_ids:
-                        # Custom or default display name
                         custom_name  = name_map.get(str(sid))
                         display_name = custom_name or f"Server {sid}"
 
@@ -58,12 +57,12 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                 mdata = await resp.json()
 
                             gs = mdata.get("data", {}).get("gameserver", {}) or {}
-                            slots = gs.get("slots", "?")
-                            status = gs.get("status", "unknown")
-                            cfg = gs.get("settings", {}).get("config", {})
+                            slots       = gs.get("slots", "?")
+                            status      = gs.get("status", "unknown")
+                            cfg         = gs.get("settings", {}).get("config", {})
+
                             # Map name from config or label
                             map_name = cfg.get("map") or gs.get("label") or "Unknown"
-                            # Display name selection
                             display_name = (
                                 custom_name or
                                 cfg.get("server-name") or
@@ -71,21 +70,21 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                 display_name
                             )
 
-                            # Attempt A2S server query
+                            # Attempt A2S server query by parsing 'address'
                             players = None
                             max_players = None
-                            connect = gs.get("connect", {})
-                            ip = connect.get("address")
-                            port = connect.get("query_port")
-                            if ip and port:
+                            address = gs.get("connect", {}).get("address")
+                            if address:
                                 try:
-                                    info = a2s.info((ip, port))
+                                    host, port_str = address.split(":")
+                                    port = int(port_str)
+                                    info = a2s.info((host, port))
                                     players = info.player_count
                                     max_players = info.max_players
                                 except Exception as a2s_err:
                                     print(f"[WARN] A2S query failed for {sid}: {a2s_err}")
 
-                            # Fallback: players endpoint
+                            # Fallback: players endpoint if A2S failed
                             if players is None:
                                 players_url = f"https://api.nitrado.net/services/{sid}/players"
                                 async with session.get(players_url) as presp:
@@ -94,7 +93,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                         plist = pdata.get("data", {}).get("data", []) or pdata.get("data", [])
                                         players = len(plist)
 
-                            # Final defaults
+                            # Final defaults for counts
                             if players is None:
                                 players = 0
                             if max_players is None:
@@ -102,11 +101,11 @@ class SetStatusUpdateCog(GroupCog, name="status"):
 
                         except Exception as e:
                             print(f"[ERROR] fetching data for {sid}: {e}")
-                            map_name = "Unknown"
+                            map_name     = "Unknown"
                             display_name = custom_name or f"Server {sid}"
-                            players = 0
-                            max_players = "?"
-                            status = "unknown"
+                            players      = 0
+                            max_players  = "?"
+                            status       = "unknown"
 
                         # Status emoji
                         s = status.lower()
@@ -130,11 +129,11 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         )
                         embed.add_field(name="\u200b", value="\u200b", inline=False)
 
-            # Footer
+            # Footer and timestamp
             embed.description = f"Last updated: <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
             embed.set_footer(text="Auto-updated every 10 minutes")
 
-            # Prune old messages
+            # Clean up old messages
             try:
                 async for msg in channel.history(limit=50):
                     if self.status_message is None or msg.id != self.status_message.id:
@@ -157,7 +156,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
 
     async def manual_status_update(self, guild):
         """Trigger an immediate status update."""
-        config = load_config(guild.id)
+        config     = load_config(guild.id)
         channel_id = config.get("status_channel_id")
         if not channel_id:
             return
@@ -168,7 +167,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
     @app_commands.command(name="setstatusupdate", description="Start auto status updates in a channel.")
     async def setstatusupdate(self, interaction: discord.Interaction, channel_name: str):
         """Configure the channel for automatic status updates."""
-        guild = interaction.guild
+        guild  = interaction.guild
         config = load_config(guild.id)
 
         existing = discord.utils.get(guild.channels, name=channel_name)
