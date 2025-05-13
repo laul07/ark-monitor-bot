@@ -44,11 +44,9 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                     headers={"Authorization": f"Bearer {token}"}
                 ) as session:
                     for sid in server_ids:
-                        # determine display name
                         custom_name  = name_map.get(str(sid))
                         display_name = custom_name or f"Server {sid}"
 
-                        # defaults
                         map_name    = "Unknown"
                         players     = 0
                         max_players = "?"
@@ -63,18 +61,19 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             gs = mdata.get("data", {}).get("gameserver", {}) or {}
                             q  = mdata.get("data", {}).get("query", {})      or {}
 
-                            # fallback map/server name data
+                            # fallback name/map from config
                             cfg         = gs.get("settings", {}).get("config", {})
                             config_map  = cfg.get("map", "Unknown")
                             config_name = cfg.get("server-name")
                             slots       = gs.get("slots", "?")
 
-                            # NEW: get player data directly from 'gameserver.player'
+                            # DEBUG: print player_data
                             player_data = gs.get("player", {})
-                            players     = player_data.get("count", players)
-                            max_players = player_data.get("max", slots)
+                            print(f"[DEBUG] player_data for {sid}: {player_data}")
 
-                            # get map/server name
+                            players     = player_data.get("count", players)
+                            max_players = player_data.get("max", max_players)
+
                             display_name = (
                                 custom_name or
                                 q.get("server_name") or
@@ -88,7 +87,6 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         except Exception as e:
                             print(f"[ERROR] fetching/parsing server {sid}: {e}")
 
-                        # choose emoji
                         s = status.lower()
                         if s in ("started", "online"):
                             status_emoji = "🟢"
@@ -97,7 +95,6 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         else:
                             status_emoji = "🔴"
 
-                        # single field per server, no extra blank before details
                         embed.add_field(
                             name=display_name,
                             value=(
@@ -113,7 +110,6 @@ class SetStatusUpdateCog(GroupCog, name="status"):
             embed.description = f"Last updated: <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
             embed.set_footer(text="Auto-updated every 10 minutes")
 
-            # delete old messages except our pinned one
             try:
                 async for msg in channel.history(limit=50):
                     if self.status_message is None or msg.id != self.status_message.id:
@@ -121,7 +117,6 @@ class SetStatusUpdateCog(GroupCog, name="status"):
             except Exception as prune_err:
                 print(f"[WARN] prune failed: {prune_err}")
 
-            # send or edit + pin
             try:
                 if self.status_message:
                     await self.status_message.edit(embed=embed)
