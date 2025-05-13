@@ -44,81 +44,57 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                     headers={"Authorization": f"Bearer {token}"}
                 ) as session:
                     for sid in server_ids:
+                        # load guild-specific custom name or default
                         custom_name  = name_map.get(str(sid))
                         display_name = custom_name or f"Server {sid}"
 
-                        map_name    = "Unknown"
-                        players     = None
-                        max_players = None
-                        status      = "unknown"
-
                         try:
-                            # Fetch primary metadata
+                            # fetch server metadata
                             main_url = f"https://api.nitrado.net/services/{sid}/gameservers"
                             async with session.get(main_url) as resp:
+                                if resp.status != 200:
+                                    raise ValueError(f"Metadata fetch failed: {resp.status}")
                                 mdata = await resp.json()
 
-                            gs = mdata.get("data", {}).get("gameserver", {}) or {}
-                            q  = mdata.get("data", {}).get("query", {})      or {}
-
-                            cfg         = gs.get("settings", {}).get("config", {})
-                            config_map  = cfg.get("map", "Unknown")
-                            config_name = cfg.get("server-name")
+                            gs = mdata.get("data", {}).get("gameserver", {})
+                            # slots and basic info
                             slots       = gs.get("slots", "?")
+                            status      = gs.get("status", "unknown")
+                            cfg         = gs.get("settings", {}).get("config", {})
 
-                            # Primary player data
-                            player_data = gs.get("player", {}) or {}
-                            players     = player_data.get("count")
-                            max_players = player_data.get("max")
+                            # determine map name
+                            map_name    = cfg.get("map") or gs.get("label") or "Unknown"
 
-                            # Fallback to query endpoint if missing
-                            if players is None or max_players is None:
-                                query_url = f"https://api.nitrado.net/services/{sid}/gameservers/query"
-                                async with session.get(query_url) as qresp:
-                                    resp_text = await qresp.text()
-                                    print(f"[DEBUG] Query response for {sid}: status={qresp.status}, text={resp_text}")
-                                    if qresp.status == 200:
-                                        qdata = await qresp.json()
-                                        query = qdata.get("data", {}).get("query", {}) or qdata.get("data", {})
-                                        players     = query.get("player_current")
-                                        max_players = query.get("player_max")
-
-                            # Final fallback: slots default
-                            if players is None:
-                                players = 0
-                            if max_players is None:
-                                max_players = slots
-
-                            # Debug players and max_players
-                            print(f"[DEBUG] Final players for {sid} after query fallback: {players}/{max_players}")
-
-                            # Attempt /players endpoint if still zero
-                            if players == 0:
-                                players_url = f"https://api.nitrado.net/services/{sid}/players"
-                                async with session.get(players_url) as presp:
-                                    presp_text = await presp.text()
-                                    print(f"[DEBUG] Players endpoint for {sid}: status={presp.status}, text={presp_text}")
-                                    if presp.status == 200:
-                                        pdata = await presp.json()
-                                        plist = pdata.get("data", {}).get("data", []) or pdata.get("data", [])
-                                        players = len(plist)
-                                        print(f"[DEBUG] Player list length for {sid}: {players}")
-
-                            # Determine final display values
+                            # determine display name
                             display_name = (
                                 custom_name or
-                                q.get("server_name") or
-                                config_name or
+                                cfg.get("server-name") or
                                 gs.get("label") or
                                 display_name
                             )
-                            map_name = q.get("map", config_map)
-                            status   = gs.get("status", status)
+
+                            # fetch connected players list
+                            players_url = f"https://api.nitrado.net/services/{sid}/players"
+                            async with session.get(players_url) as presp:
+                                if presp.status == 200:
+                                    pdata = await presp.json()
+                                    plist = pdata.get("data", {}).get("data", []) or pdata.get("data", [])
+                                    players = len(plist)
+                                else:
+                                    players = 0
+
+                            max_players = slots
 
                         except Exception as e:
-                            print(f"[ERROR] fetching/parsing server {sid}: {e}")
+                            print(f"[ERROR] fetching data for {sid}: {e}")
+                            # defaults on error
+                            display_name = custom_name or f"Server {sid}"
+                            map_name     = "Unknown"
+                            players      = 0
+                            max_players  = "?"
+                            status       = "unknown"
 
-                        # Choose emoji based on status
+                        # choose emoji by status
                         s = status.lower()
                         if s in ("started", "online"):
                             status_emoji = "🟢"
@@ -127,7 +103,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         else:
                             status_emoji = "🔴"
 
-                        # Add fields to embed
+                        # add embed fields
                         embed.add_field(
                             name=display_name,
                             value=(
@@ -140,10 +116,11 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         )
                         embed.add_field(name="\u200b", value="\u200b", inline=False)
 
+            # footer and timestamp
             embed.description = f"Last updated: <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
             embed.set_footer(text="Auto-updated every 10 minutes")
 
-            # Clean up old messages
+            # prune old messages
             try:
                 async for msg in channel.history(limit=50):
                     if self.status_message is None or msg.id != self.status_message.id:
@@ -151,7 +128,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
             except Exception as prune_err:
                 print(f"[WARN] prune failed: {prune_err}")
 
-            # Send or edit the status message
+            # send or edit existing status message
             try:
                 if self.status_message:
                     await self.status_message.edit(embed=embed)
@@ -165,6 +142,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                 self.status_message = await channel.send(embed=embed)
 
     async def manual_status_update(self, guild):
+        """Trigger an immediate status update."""
         config     = load_config(guild.id)
         channel_id = config.get("status_channel_id")
         if not channel_id:
@@ -175,23 +153,25 @@ class SetStatusUpdateCog(GroupCog, name="status"):
 
     @app_commands.command(name="setstatusupdate", description="Start auto status updates in a channel.")
     async def setstatusupdate(self, interaction: discord.Interaction, channel_name: str):
+        """Configure the channel for automatic status updates."""
         guild  = interaction.guild
         config = load_config(guild.id)
 
         existing = discord.utils.get(guild.channels, name=channel_name)
         if existing:
             config["status_channel_id"] = existing.id
-            msg = f"✅ Using existing channel `{channel_name}`." 
+            msg = f"✅ Using existing channel `{channel_name}`."
         else:
             new_ch = await guild.create_text_channel(channel_name)
             config["status_channel_id"] = new_ch.id
-            msg = f"✅ Created channel `{channel_name}`." 
+            msg = f"✅ Created channel `{channel_name}`."
         save_config(guild.id, config)
         await interaction.response.send_message(msg, ephemeral=True)
         await self.manual_status_update(guild)
 
     @app_commands.command(name="view", description="View current status update channel.")
     async def view_status(self, interaction: discord.Interaction):
+        """View the currently configured status channel."""
         config = load_config(interaction.guild.id)
         cid    = config.get("status_channel_id")
         if cid:
@@ -203,11 +183,12 @@ class SetStatusUpdateCog(GroupCog, name="status"):
 
     @app_commands.command(name="disable", description="Disable status updates.")
     async def disable_status(self, interaction: discord.Interaction):
+        """Disable automatic status updates."""
         config = load_config(interaction.guild.id)
         if "status_channel_id" in config:
             del config["status_channel_id"]
             save_config(interaction.guild.id, config)
-            await interaction.response.send_message("🚩 Status updates disabled.", ephemeral=True)
+            await interaction.response.send_message("🛑 Status updates disabled.", ephemeral=True)
         else:
             await interaction.response.send_message("⚠️ No status channel to disable.", ephemeral=True)
 
