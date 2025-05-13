@@ -53,6 +53,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         status      = "unknown"
 
                         try:
+                            # Fetch primary metadata
                             main_url = f"https://api.nitrado.net/services/{sid}/gameservers"
                             async with session.get(main_url) as resp:
                                 mdata = await resp.json()
@@ -74,23 +75,28 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             if players is None or max_players is None:
                                 query_url = f"https://api.nitrado.net/services/{sid}/gameservers/query"
                                 async with session.get(query_url) as qresp:
-                                    resp_text = await qresp.text()
-                                    print(f"[DEBUG] Query response for {sid}: status={qresp.status}, text={resp_text}")
                                     if qresp.status == 200:
                                         qdata = await qresp.json()
-                                        print(f"[DEBUG] Full query JSON for {sid}: {qdata}")
                                         query = qdata.get("data", {}).get("query", {}) or qdata.get("data", {})
                                         players     = query.get("player_current")
                                         max_players = query.get("player_max")
 
-                            # Final defaults if still missing
+                            # Final fallback: players list endpoint
                             if players is None:
                                 players = 0
                             if max_players is None:
                                 max_players = slots
 
-                            print(f"[DEBUG] Final players={players}, max_players={max_players}")
+                            if players == 0:
+                                # Attempt /players endpoint
+                                players_url = f"https://api.nitrado.net/services/{sid}/players"
+                                async with session.get(players_url) as presp:
+                                    if presp.status == 200:
+                                        pdata = await presp.json()
+                                        plist = pdata.get("data", {}).get("data", []) or pdata.get("data", [])
+                                        players = len(plist)
 
+                            # Determine final display values
                             display_name = (
                                 custom_name or
                                 q.get("server_name") or
@@ -104,6 +110,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         except Exception as e:
                             print(f"[ERROR] fetching/parsing server {sid}: {e}")
 
+                        # Choose emoji based on status
                         s = status.lower()
                         if s in ("started", "online"):
                             status_emoji = "🟢"
@@ -112,6 +119,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         else:
                             status_emoji = "🔴"
 
+                        # Add fields to embed
                         embed.add_field(
                             name=display_name,
                             value=(
@@ -127,6 +135,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
             embed.description = f"Last updated: <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
             embed.set_footer(text="Auto-updated every 10 minutes")
 
+            # Clean up old messages
             try:
                 async for msg in channel.history(limit=50):
                     if self.status_message is None or msg.id != self.status_message.id:
@@ -134,6 +143,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
             except Exception as prune_err:
                 print(f"[WARN] prune failed: {prune_err}")
 
+            # Send or edit the status message
             try:
                 if self.status_message:
                     await self.status_message.edit(embed=embed)
