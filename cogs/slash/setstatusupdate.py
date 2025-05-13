@@ -33,7 +33,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
 
             token = config.get("nitrado_token")
             embed = discord.Embed(
-                title="📡 Ark Server Status",
+                title="📱 Ark Server Status",
                 color=discord.Color.green()
             )
 
@@ -53,7 +53,6 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                         status      = "unknown"
 
                         try:
-                            # fetch metadata
                             main_url = f"https://api.nitrado.net/services/{sid}/gameservers"
                             async with session.get(main_url) as resp:
                                 mdata = await resp.json()
@@ -61,18 +60,26 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             gs = mdata.get("data", {}).get("gameserver", {}) or {}
                             q  = mdata.get("data", {}).get("query", {})      or {}
 
-                            # fallback name/map from config
                             cfg         = gs.get("settings", {}).get("config", {})
                             config_map  = cfg.get("map", "Unknown")
                             config_name = cfg.get("server-name")
                             slots       = gs.get("slots", "?")
 
-                            # DEBUG: print player_data
-                            player_data = gs.get("player", {})
-                            print(f"[DEBUG] player_data for {sid}: {player_data}")
+                            player_data = gs.get("player", {}) or {}
+                            players     = player_data.get("count")
+                            max_players = player_data.get("max")
 
-                            players     = player_data.get("count", players)
-                            max_players = player_data.get("max", max_players)
+                            # Fallback to query if empty
+                            if players is None or max_players is None:
+                                query_url = f"https://api.nitrado.net/services/{sid}/gameservers/query"
+                                async with session.get(query_url) as qresp:
+                                    if qresp.status == 200:
+                                        qdata = await qresp.json()
+                                        query = qdata.get("data", {}).get("query", {}) or qdata.get("data", {})
+                                        players     = query.get("player_current", 0)
+                                        max_players = query.get("player_max", "?")
+
+                            print(f"[DEBUG] players={players}, max_players={max_players}")
 
                             display_name = (
                                 custom_name or
@@ -99,8 +106,8 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             name=display_name,
                             value=(
                                 f"🆔 ID: `{sid}`\n"
-                                f"🗺️ Map: `{map_name}`\n"
-                                f"🧍 Players: `{players}/{max_players}`\n"
+                                f"🗼 Map: `{map_name}`\n"
+                                f"🧝 Players: `{players}/{max_players}`\n"
                                 f"{status_emoji} Status: `{status}`"
                             ),
                             inline=False
@@ -172,7 +179,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
         if "status_channel_id" in config:
             del config["status_channel_id"]
             save_config(interaction.guild.id, config)
-            await interaction.response.send_message("🛑 Status updates disabled.", ephemeral=True)
+            await interaction.response.send_message("🚩 Status updates disabled.", ephemeral=True)
         else:
             await interaction.response.send_message("⚠️ No status channel to disable.", ephemeral=True)
 
