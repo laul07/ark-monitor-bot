@@ -63,21 +63,18 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             gs = mdata.get("data", {}).get("gameserver", {}) or {}
                             q  = mdata.get("data", {}).get("query", {})      or {}
 
-                            # dedicated query endpoint if needed
-                            if not q or "player_current" not in q:
-                                query_url = f"https://api.nitrado.net/services/{sid}/gameservers/query"
-                                async with session.get(query_url) as qresp:
-                                    if qresp.status == 200:
-                                        qdata = await qresp.json()
-                                        q = qdata.get("data", {}).get("query", {}) or qdata.get("data", {})
-
-                            # fallbacks from settings.config
+                            # fallback map/server name data
                             cfg         = gs.get("settings", {}).get("config", {})
                             config_map  = cfg.get("map", "Unknown")
                             config_name = cfg.get("server-name")
                             slots       = gs.get("slots", "?")
 
-                            # populate
+                            # NEW: get player data directly from 'gameserver.player'
+                            player_data = gs.get("player", {})
+                            players     = player_data.get("count", players)
+                            max_players = player_data.get("max", slots)
+
+                            # get map/server name
                             display_name = (
                                 custom_name or
                                 q.get("server_name") or
@@ -85,10 +82,8 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                 gs.get("label") or
                                 display_name
                             )
-                            map_name     = q.get("map", config_map)
-                            players      = q.get("player_current", players)
-                            max_players  = q.get("player_max", slots)
-                            status       = gs.get("status", status)
+                            map_name = q.get("map", config_map)
+                            status   = gs.get("status", status)
 
                         except Exception as e:
                             print(f"[ERROR] fetching/parsing server {sid}: {e}")
@@ -113,7 +108,6 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             ),
                             inline=False
                         )
-                        # spacer between servers
                         embed.add_field(name="\u200b", value="\u200b", inline=False)
 
             embed.description = f"Last updated: <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
