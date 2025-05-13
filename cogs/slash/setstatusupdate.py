@@ -180,3 +180,32 @@ class SetStatusUpdateCog(GroupCog, name="status"):
             config["status_channel_id"] = new_ch.id
             msg = f"✅ Created channel `{channel_name}`."
         save_config(guild.id, config)
+        await interaction.response.send_message(msg, ephemeral=True)
+        await self.manual_status_update(guild)
+
+    @app_commands.command(name="view", description="View current status update channel.")
+    async def view_status(self, interaction: discord.Interaction):
+        """View the currently configured status channel."""
+        config = load_config(interaction.guild.id)
+        cid    = config.get("status_channel_id")
+        if cid:
+            ch = interaction.guild.get_channel(cid)
+            mention = ch.mention if ch else f"(ID: {cid})"
+            await interaction.response.send_message(f"🔎 Updates go to: {mention}", ephemeral=True)
+        else:
+            await interaction.response.send_message("⚠️ No status channel configured.", ephemeral=True)
+
+    @app_commands.command(name="disable", description="Disable status updates.")
+    async def disable_status(self, interaction: discord.Interaction):
+        """Disable automatic status updates."""
+        config = load_config(interaction.guild.id)
+        if "status_channel_id" in config:
+            del config["status_channel_id"]
+            save_config(interaction.guild.id, config)
+            await interaction.response.send_message("🛑 Status updates disabled.", ephemeral=True)
+        else:
+            await interaction.response.send_message("⚠️ No status channel to disable.", ephemeral=True)
+
+async def setup(bot):
+    """Add the status update cog to the bot."""
+    await bot.add_cog(SetStatusUpdateCog(bot))
