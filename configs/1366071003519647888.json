@@ -1,0 +1,36 @@
+{
+    "nitrado_token": "DQa7-mFjTex9Sc8sHKEINLLIHhyhwshFWltEcQ4puSo09mjoxnPuoKtmciygttqvSJ-qrjUPBEb-GZOtc1IZv-tkzXDIaQrzzEHr",
+    "nitrado_token_preview": "DQa7\u2022\u2022\u2022\u2022zEHr",
+    "linked_servers": [
+        "Echoes of Eden Crossplay 5x - Scorched Earth - (v65.16)",
+        "Echoes of Eden CrossPlay 5x - Island - (v65.16)",
+        "Echoes of Eden Crossplay 5x - Center - (v65.16)",
+        "Echoes of Eden Crossplay 5x - Aberration - (v65.16)",
+        "Echoes of Eden Crossplay 5x - Extinction - (v65.16)",
+        "Gameserver - 20 Slots",
+        "Echoes of Eden Crossplay 5x - Astraeos - (v65.12)"
+    ],
+    "server_ids": [
+        "13997997",
+        "14955819",
+        "15334651",
+        "15779839",
+        "16363825",
+        "16481974",
+        "16730212"
+    ],
+    "server_names": {
+        "13997997": "Echoes of Eden Crossplay 5x - Scorched Earth - (v65.16)",
+        "14955819": "Echoes of Eden CrossPlay 5x - Island - (v65.16)",
+        "15334651": "Echoes of Eden Crossplay 5x - Center - (v65.16)",
+        "15779839": "Echoes of Eden Crossplay 5x - Aberration - (v65.16)",
+        "16363825": "Echoes of Eden Crossplay 5x - Extinction - (v65.16)",
+        "16481974": "Gameserver - 20 Slots",
+        "16730212": "Echoes of Eden Crossplay 5x - Astraeos - (v65.12)"
+    },
+    "__meta__": {
+        "guild_name": "Ark Monitor ASA",
+        "created_at": "2025-05-09T11:34:08.048215Z"
+    },
+    "status_channel_id": 1369857848896655422
+}
