@@ -35,12 +35,18 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                 continue
 
             token = config.get("nitrado_token")
-            embed = discord.Embed(
-                title="📡 Ark Server Status",
-                color=discord.Color.green()
-            )
+            # We'll determine embed color dynamically
+            embed_color = discord.Color.green()
+            status_list = []
+            suspended_list = []
+            has_yellow = False
+            has_red = False
 
             if not token:
+                embed = discord.Embed(
+                    title="📡 Ark Server Status",
+                    color=discord.Color.red()
+                )
                 embed.description = "❌ No Nitrado token configured."
             else:
                 async with aiohttp.ClientSession(
@@ -84,6 +90,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                 async with session.get(players_url) as presp:
                                     if presp.status == 200:
                                         pdata = await presp.json()
+                                        logging.debug(f"[DEBUG] /players response for {sid}: {pdata}")
                                         plist = pdata.get("data", {}).get("data", []) or pdata.get("data", [])
                                         players = len(plist)
                             if players is None:
@@ -111,12 +118,37 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                 f"🗺️ Map: `{map_name}`\n"
                                 f"🧍 Players: `{players}/{max_players}`\n"
                                 f"{status_emoji} Status: `{status}`"
-                            )
+                            ),
+                            "status": s
                         }
                     results = await asyncio.gather(*(fetch_status(sid) for sid in server_ids))
                     for result in results:
+                        if result["status"] in ("started", "online"):
+                            status_list.append(result)
+                        elif result["status"] in ("restarting", "updating"):
+                            status_list.append(result)
+                            has_yellow = True
+                        else:
+                            suspended_list.append(result)
+                            has_red = True
+                    # Set embed color
+                    if has_red:
+                        embed_color = discord.Color.red()
+                    elif has_yellow:
+                        embed_color = discord.Color.yellow()
+                    else:
+                        embed_color = discord.Color.green()
+                    embed = discord.Embed(
+                        title="📡 Ark Server Status",
+                        color=embed_color
+                    )
+                    # Add online/restarting servers first, then suspended/offline
+                    all_results = status_list + suspended_list
+                    for i, result in enumerate(all_results):
                         embed.add_field(name=result["name"], value=result["value"], inline=False)
-                        embed.add_field(name="\u200b", value="\u200b", inline=False)
+                        # Only add blank field between servers, not after last
+                        if i < len(all_results) - 1:
+                            embed.add_field(name="\u200b", value="\u200b", inline=False)
             embed.description = f"Last updated: <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
             embed.set_footer(text="Auto-updated every 10 minutes")
             # Prune and send/edit message
