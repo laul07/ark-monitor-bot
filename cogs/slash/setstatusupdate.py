@@ -8,6 +8,8 @@ from utils.config import load_config, save_config
 from datetime import datetime, timezone
 import aiohttp
 import a2s  # Use A2S protocol for reliable player counts
+import logging
+import asyncio
 
 class SetStatusUpdateCog(GroupCog, name="status"):
     def __init__(self, bot):
@@ -44,28 +46,21 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                 async with aiohttp.ClientSession(
                     headers={"Authorization": f"Bearer {token}"}
                 ) as session:
-                    for sid in server_ids:
+                    async def fetch_status(sid):
                         custom_name  = name_map.get(str(sid))
                         display_name = custom_name or f"Server {sid}"
-
                         try:
-                            # Fetch server metadata
                             main_url = f"https://api.nitrado.net/services/{sid}/gameservers"
                             async with session.get(main_url) as resp:
                                 if resp.status != 200:
                                     raise ValueError(f"Metadata fetch failed: {resp.status}")
                                 mdata = await resp.json()
-
                             gs = mdata.get("data", {}).get("gameserver", {}) or {}
                             q  = mdata.get("data", {}).get("query", {})      or {}
-                            # Debug query info
-                            print(f"[DEBUG] query info for {sid}: {q}")
-
+                            logging.debug(f"[DEBUG] query info for {sid}: {q}")
                             slots = gs.get("slots", "?")
                             status = gs.get("status", "unknown")
                             cfg = gs.get("settings", {}).get("config", {})
-
-                            # Map and display names
                             map_name = cfg.get("map") or gs.get("label") or "Unknown"
                             display_name = (
                                 custom_name or
@@ -73,8 +68,6 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                 gs.get("label") or
                                 display_name
                             )
-
-                            # Attempt A2S using query host/port
                             players = None
                             max_players = None
                             host = q.get("address") or q.get("host")
@@ -85,9 +78,7 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                     players = info.player_count
                                     max_players = info.max_players
                                 except Exception as a2s_err:
-                                    print(f"[WARN] A2S query failed for {sid}: {a2s_err}")
-
-                            # Fallback: use /players endpoint
+                                    logging.warning(f"[WARN] A2S query failed for {sid}: {a2s_err}")
                             if players is None:
                                 players_url = f"https://api.nitrado.net/services/{sid}/players"
                                 async with session.get(players_url) as presp:
@@ -95,22 +86,17 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                                         pdata = await presp.json()
                                         plist = pdata.get("data", {}).get("data", []) or pdata.get("data", [])
                                         players = len(plist)
-
-                            # Final defaults
                             if players is None:
                                 players = 0
                             if max_players is None:
                                 max_players = slots
-
                         except Exception as e:
-                            print(f"[ERROR] fetching data for {sid}: {e}")
+                            logging.error(f"[ERROR] fetching data for {sid}: {e}")
                             map_name     = "Unknown"
                             display_name = custom_name or f"Server {sid}"
                             players      = 0
                             max_players  = "?"
                             status       = "unknown"
-
-                        # Status emoji
                         s = status.lower()
                         if s in ("started", "online"):
                             status_emoji = "🟢"
@@ -118,41 +104,37 @@ class SetStatusUpdateCog(GroupCog, name="status"):
                             status_emoji = "🟡"
                         else:
                             status_emoji = "🔴"
-
-                        # Add to embed
-                        embed.add_field(
-                            name=display_name,
-                            value=(
+                        return {
+                            "name": display_name,
+                            "value": (
                                 f"🆔 ID: `{sid}`\n"
                                 f"🗺️ Map: `{map_name}`\n"
                                 f"🧍 Players: `{players}/{max_players}`\n"
                                 f"{status_emoji} Status: `{status}`"
-                            ),
-                            inline=False
-                        )
+                            )
+                        }
+                    results = await asyncio.gather(*(fetch_status(sid) for sid in server_ids))
+                    for result in results:
+                        embed.add_field(name=result["name"], value=result["value"], inline=False)
                         embed.add_field(name="\u200b", value="\u200b", inline=False)
-
             embed.description = f"Last updated: <t:{int(datetime.now(timezone.utc).timestamp())}:R>"
             embed.set_footer(text="Auto-updated every 10 minutes")
-
             # Prune and send/edit message
             try:
-                async for msg in channel.history(limit=50):
-                    if self.status_message is None or msg.id != self.status_message.id:
-                        await msg.delete()
-            except Exception as prune_err:
-                print(f"[WARN] prune failed: {prune_err}")
-
-            try:
+                # Only delete previous status message if it exists and is not the current one
                 if self.status_message:
-                    await self.status_message.edit(embed=embed)
-                    if not self.status_message.pinned:
-                        await self.status_message.pin()
-                else:
-                    self.status_message = await channel.send(embed=embed)
-                    await self.status_message.pin()
+                    try:
+                        prev_msg = await channel.fetch_message(self.status_message.id)
+                        await prev_msg.delete()
+                    except Exception:
+                        pass
+            except Exception as prune_err:
+                logging.warning(f"[WARN] prune failed: {prune_err}")
+            try:
+                self.status_message = await channel.send(embed=embed)
+                await self.status_message.pin()
             except Exception as send_err:
-                print(f"[ERROR] send/edit failed: {send_err}")
+                logging.error(f"[ERROR] send/edit failed: {send_err}")
                 self.status_message = await channel.send(embed=embed)
 
     async def manual_status_update(self, guild):
